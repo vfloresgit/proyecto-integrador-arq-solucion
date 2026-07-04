@@ -66,6 +66,13 @@ Feature RF-02b: Consulta periódica a API de aseguradora para obtener estado de 
     Then el sistema debe obtener el estado de liquidación y registrarlo en el expediente
     And debe actualizar el estado del expediente automáticamente sin intervención del facturador
 
+Scenario: Actualización de estados mediante proceso por lote programado (Polling Exitoso)
+    Given que existen expedientes en el ERP con estado "Enviado a aseguradora"
+    And las aseguradoras de dichos expedientes no cuentan con soporte para webhooks
+    When se ejecuta el proceso por lote programado según la frecuencia configurada
+    Then el sistema debe consultar secuencialmente la API de cada aseguradora mediante el ID de transacción
+    And debe actualizar los datos de respuesta y el estado de la liquidación en el ERP automáticamente
+
   # Escenario negativo
 
   Scenario: Consulta periódica fallida por API de aseguradora no disponible
@@ -74,6 +81,14 @@ Feature RF-02b: Consulta periódica a API de aseguradora para obtener estado de 
     When se agotan los reintentos
     Then el ERP debe registrar el intento en el log con estado "Sin respuesta" y timestamp
     And debe notificar al facturador para seguimiento manual del caso
+
+Scenario: Interrupción del servicio de consulta periódica por caída de red externa
+    Given que el proceso programado inicia la consulta masiva de estados
+    When la API externa de la aseguradora no responde tras un tiempo de espera de 5 segundos
+    Then el sistema debe detener la consulta para esa aseguradora específica[cite: 1]
+    And debe programar una nueva ejecución de contingencia para los expedientes pendientes
+    And debe guardar un log de error indicando la indisponibilidad temporal del servicio externo
+
 ```
 
 ```gherkin
@@ -91,6 +106,13 @@ Feature RF-03: Gestión automática de expedientes observados o rechazados
     Then debe actualizar el estado del expediente a "Observado" con el detalle del motivo
     And debe notificar al equipo de facturación en un máximo de 1 minuto con el detalle de la observación
 
+Scenario: Recepción y notificación automática de un expediente observado por discrepancia
+    Given que la aseguradora evalúa un expediente y genera una objeción en los códigos de prestación
+    When el ERP recibe el estado de rechazo u observación a través de la API o Webhook
+    Then el sistema debe cambiar automáticamente el estado del caso a "Observado por Aseguradora"
+    And debe extraer y adjuntar al caso el detalle estructurado de la discrepancia de codificación enviada
+    And debe enviar una alerta inmediata a la bandeja del equipo de facturación a cargo de la cuenta
+
   # Escenario negativo
 
   Scenario: Expediente rechazado sin detalle de motivo por parte de la aseguradora
@@ -99,6 +121,12 @@ Feature RF-03: Gestión automática de expedientes observados o rechazados
     When el ERP procesa la respuesta
     Then debe marcar el expediente con estado "Rechazado - Motivo no especificado"
     And debe notificar al facturador indicando que debe contactar a la aseguradora para obtener el detalle
+
+Scenario: Recepción de rechazo con código de error desconocido por el ERP
+    Given que el ERP procesa una respuesta de rechazo de la aseguradora
+    When el código de error devuelto por la API externa no se encuentra en el catálogo maestro del ERP
+    Then el sistema debe clasificar el expediente bajo el estado genérico "Observado - Revisión Manual"
+    And debe guardar en el expediente el mensaje de texto original de la aseguradora para análisis de TI
 ```
 
 ```gherkin
